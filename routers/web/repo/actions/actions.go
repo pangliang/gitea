@@ -5,6 +5,8 @@ package actions
 
 import (
 	"bytes"
+	"code.gitea.io/gitea/modules/log"
+	webhook_module "code.gitea.io/gitea/modules/webhook"
 	"fmt"
 	"net/http"
 	"strings"
@@ -57,6 +59,10 @@ func MustEnableActions(ctx *context.Context) {
 func List(ctx *context.Context) {
 	ctx.Data["Title"] = ctx.Tr("actions.actions")
 	ctx.Data["PageIsActions"] = true
+	workflowID := ctx.FormString("workflow")
+	actorID := ctx.FormInt64("actor")
+	status := ctx.FormInt("status")
+	ctx.Data["CurWorkflow"] = workflowID
 
 	var workflows []Workflow
 	if empty, err := ctx.Repo.GitRepo.IsEmpty(); err != nil {
@@ -122,6 +128,21 @@ func List(ctx *context.Context) {
 				}
 			}
 			workflows = append(workflows, workflow)
+
+			if len(workflowID) > 0 && ctx.Repo.IsAdmin() && workflow.Entry.Name() == workflowID {
+				events, err := actions.GetEventsFromContent(content)
+				if err != nil {
+					log.Warn("ignore check invalid workflow events %q: %v", workflow.Entry.Name(), err)
+				} else {
+					for _, event := range events {
+						if event.Name == webhook_module.HookEventWorkflowDispatch.Event() {
+							ctx.Data["AllowTriggerWorkflowDispatchEvent"] = true
+							break
+						}
+					}
+				}
+			}
+
 		}
 	}
 	ctx.Data["workflows"] = workflows
@@ -132,17 +153,12 @@ func List(ctx *context.Context) {
 		page = 1
 	}
 
-	workflow := ctx.FormString("workflow")
-	actorID := ctx.FormInt64("actor")
-	status := ctx.FormInt("status")
-	ctx.Data["CurWorkflow"] = workflow
-
 	actionsConfig := ctx.Repo.Repository.MustGetUnit(ctx, unit.TypeActions).ActionsConfig()
 	ctx.Data["ActionsConfig"] = actionsConfig
 
-	if len(workflow) > 0 && ctx.Repo.IsAdmin() {
+	if len(workflowID) > 0 && ctx.Repo.IsAdmin() {
 		ctx.Data["AllowDisableOrEnableWorkflow"] = true
-		ctx.Data["CurWorkflowDisabled"] = actionsConfig.IsWorkflowDisabled(workflow)
+		ctx.Data["CurWorkflowDisabled"] = actionsConfig.IsWorkflowDisabled(workflowID)
 	}
 
 	// if status or actor query param is not given to frontend href, (href="/<repoLink>/actions")
@@ -159,7 +175,7 @@ func List(ctx *context.Context) {
 			PageSize: convert.ToCorrectPageSize(ctx.FormInt("limit")),
 		},
 		RepoID:        ctx.Repo.Repository.ID,
-		WorkflowID:    workflow,
+		WorkflowID:    workflowID,
 		TriggerUserID: actorID,
 	}
 
@@ -196,7 +212,7 @@ func List(ctx *context.Context) {
 
 	pager := context.NewPagination(int(total), opts.PageSize, opts.Page, 5)
 	pager.SetDefaultParams(ctx)
-	pager.AddParamString("workflow", workflow)
+	pager.AddParamString("workflow", workflowID)
 	pager.AddParamString("actor", fmt.Sprint(actorID))
 	pager.AddParamString("status", fmt.Sprint(status))
 	ctx.Data["Page"] = pager

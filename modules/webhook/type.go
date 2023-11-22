@@ -31,6 +31,7 @@ const (
 	HookEventRepository                HookEventType = "repository"
 	HookEventRelease                   HookEventType = "release"
 	HookEventPackage                   HookEventType = "package"
+	HookEventWorkflowDispatch          HookEventType = "workflow_dispatch"
 )
 
 // Event returns the HookEventType as an event string
@@ -63,6 +64,8 @@ func (h HookEventType) Event() string {
 		return "repository"
 	case HookEventRelease:
 		return "release"
+	case HookEventWorkflowDispatch:
+		return "workflow_dispatch"
 	}
 	return ""
 }

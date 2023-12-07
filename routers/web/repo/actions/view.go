@@ -29,7 +29,6 @@ import (
 	"code.gitea.io/gitea/modules/timeutil"
 	"code.gitea.io/gitea/modules/util"
 	"code.gitea.io/gitea/modules/web"
-	webhook_module "code.gitea.io/gitea/modules/webhook"
 	actions_service "code.gitea.io/gitea/services/actions"
 
 	"xorm.io/builder"
@@ -643,7 +642,7 @@ func Run(ctx *context_module.Context) {
 
 	ref := ctx.FormString("ref")
 	if len(ref) == 0 {
-		ctx.ServerError("workflow", nil)
+		ctx.ServerError("ref", nil)
 		return
 	}
 
@@ -697,7 +696,7 @@ func Run(ctx *context_module.Context) {
 			}
 			dwf = &actions.DetectedWorkflow{
 				EntryName:    entry.Name(),
-				TriggerEvent: webhook_module.HookEventWorkflowDispatch.Event(),
+				TriggerEvent: "workflow_dispatch",
 				Content:      content,
 			}
 			break
@@ -719,8 +718,8 @@ func Run(ctx *context_module.Context) {
 		Ref:               ref,
 		CommitSHA:         runTargetCommit.ID.String(),
 		IsForkPullRequest: false,
-		Event:             webhook_module.HookEventWorkflowDispatch,
-		TriggerEvent:      webhook_module.HookEventWorkflowDispatch.Event(),
+		Event:             "workflow_dispatch",
+		TriggerEvent:      "workflow_dispatch",
 		Status:            actions_model.StatusWaiting,
 	}
 

@@ -7,8 +7,10 @@ import (
 	"bytes"
 	git_model "code.gitea.io/gitea/models/git"
 	repo_model "code.gitea.io/gitea/models/repo"
+	"code.gitea.io/gitea/modules/log"
 	"code.gitea.io/gitea/modules/util"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"net/http"
 	"slices"
 	"strings"
@@ -36,6 +38,11 @@ const (
 type Workflow struct {
 	Entry  git.TreeEntry
 	ErrMsg string
+}
+
+type WorkflowDispatchInputNode struct {
+	Key   string
+	Value model.WorkflowDispatchInput
 }
 
 // MustEnableActions check if actions are enabled in settings
@@ -155,9 +162,9 @@ func List(ctx *context.Context) {
 		ctx.Data["CurWorkflowDisabled"] = isWorkflowDisabled
 
 		if !isWorkflowDisabled && curWorkflow != nil {
-			workflowDispatchConfig := curWorkflow.WorkflowDispatchConfig()
-			if workflowDispatchConfig != nil {
-				ctx.Data["WorkflowDispatchConfig"] = workflowDispatchConfig
+			workflowDispatchInputs := WorkflowDispatchInputs(curWorkflow.RawOn)
+			if workflowDispatchInputs != nil {
+				ctx.Data["WorkflowDispatchInputs"] = workflowDispatchInputs
 
 				branchOpts := git_model.FindBranchOptions{
 					RepoID:          ctx.Repo.Repository.ID,
@@ -243,4 +250,44 @@ func List(ctx *context.Context) {
 	ctx.Data["Page"] = pager
 
 	ctx.HTML(http.StatusOK, tplListActions)
+}
+
+func WorkflowDispatchInputs(on yaml.Node) *[]WorkflowDispatchInputNode {
+	if on.Kind != yaml.MappingNode {
+		return nil
+	}
+	var val map[string]yaml.Node
+	if !decodeNode(on, &val) {
+		return nil
+	}
+	var config map[string]yaml.Node
+	if !decodeNode(val["workflow_dispatch"], &config) {
+		return nil
+	}
+	var inputsNode yaml.Node
+	if !decodeNode(config["inputs"], &inputsNode) {
+		return nil
+	}
+	var inputs []WorkflowDispatchInputNode
+	contentLen := len(inputsNode.Content)
+	for i := 0; i < contentLen; i += 2 {
+		var input model.WorkflowDispatchInput
+		if err := inputsNode.Content[i+1].Decode(&input); err != nil {
+			log.Error("Failed to decode dispatch %v into %T: %v", inputsNode, input, err)
+			return nil
+		}
+		inputs = append(inputs, WorkflowDispatchInputNode{
+			Key:   inputsNode.Content[i].Value,
+			Value: input,
+		})
+	}
+	return &inputs
+}
+
+func decodeNode(node yaml.Node, out interface{}) bool {
+	if err := node.Decode(out); err != nil {
+		log.Error("Failed to decode node %v into %T: %v", node, out, err)
+		return false
+	}
+	return true
 }
